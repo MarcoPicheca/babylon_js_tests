@@ -31,7 +31,7 @@ function createScene() {
 
 	const camera = new BABYLON.UniversalCamera(
 		"camera",
-		new BABYLON.Vector3(0, 7, -55),
+		new BABYLON.Vector3(0, 20, -55),
 		scene
 	);
 
@@ -59,7 +59,7 @@ function createScene() {
 		new BABYLON.Vector3(60, 100, 20),
 		scene
 	);
-	light.intensity = 0.7;
+	light.intensity = 0.5;
 
 	/* =======================
 	SHADOW LIGHT
@@ -149,13 +149,13 @@ function createScene() {
 
 	sphere.position.set(0, 4, 0);
 	let ballDir = new BABYLON.Vector3(0.15, 0, 0.2);
-	const ballSpeed = 1.5;
+	const ballSpeed = 2;
 	const ballLimit = 24;
 
 	shadowGenerator.addShadowCaster(sphere);
 	shadowGenerator.addShadowCaster(box);
 	shadowGenerator.addShadowCaster(box2);
-2
+
 	/* =======================
 	   GROUND
 	======================= */
@@ -165,9 +165,22 @@ function createScene() {
 			height: 60,
 			depth: 50,
 			width: 60,
+			// per vedere i rilievi
+			// subdivisiion: 50
 		}, scene);
 	groundHighMap.position.y = -1;
 	groundHighMap.receiveShadows = true;
+
+	/* =======================
+	GROUND MATERIAL
+	======================= */
+	const groundMaterial = new BABYLON.StandardMaterial("groundMat", scene);
+	groundMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.6, 0.2); // verde campo
+	groundMaterial.specularColor = BABYLON.Color3.Black(); // niente riflessi
+
+	groundHighMap.material = groundMaterial;
+
+	camera.setTarget(groundHighMap.position);
 	
 	/* =======================
 	   INPUT
@@ -199,31 +212,71 @@ function createScene() {
 	const minZ = -25;
 	const maxZ = 25;
 
+
+	/* =======================
+	   FUNZIONE PER COLLISIONE PALLA <-> PADDLE
+	======================= */
+	function checkBallPaddleCollision(ball, paddle) {
+		const ballRadius = 1;
+		const paddleHalfZ = 2.5;
+		const paddleHalfX = 1;
+
+		const collisionX =
+			Math.abs(ball.position.x - paddle.position.x) <=
+			ballRadius + paddleHalfX;
+
+		const collisionZ =
+			Math.abs(ball.position.z - paddle.position.z) <=
+			ballRadius + paddleHalfZ;
+
+		return collisionX && collisionZ;
+	}
+
 	scene.onBeforeRenderObservable.add(() => {
 
 		/* =======================
-		   PLAYER 1 – -> / <- (arrows)
+		   PLAYER 1 – right / left (FPS camera) or up / down (default camera)
 		======================= */
-		if (inputMap["ArrowRight"]) {
-			playerBox += speed;
+		if (scene.activeCamera === camera){
+			if (inputMap["ArrowUp"]) {
+				playerBox += speed;
+			}
+	
+			if (inputMap["ArrowDown"]) {
+				playerBox -= speed;
+			}
 		}
-
-		if (inputMap["ArrowLeft"]) {
-			playerBox -= speed;
+		else {
+			if (inputMap["ArrowRight"]) {
+				playerBox += speed;
+			}
+	
+			if (inputMap["ArrowLeft"]) {
+				playerBox -= speed;
+			}
 		}
 
 		playerBox = BABYLON.Scalar.Clamp(playerBox, minZ, maxZ);
 
 		box.position.z = playerBox;
 		/* =======================
-		   PLAYER 2 – A / D
+		   PLAYER 2 – A / D (FPS camera) or W / S (default camera)
 		======================= */
-		if (inputMap["d"] || inputMap["D"]) {
-			playerBox2 -= speed;
+		if (scene.activeCamera === camera){
+			if (inputMap["s"] || inputMap["S"]) {
+				playerBox2 -= speed;
+			}
+			if (inputMap["w"] || inputMap["W"]) {
+				playerBox2 += speed;
+			}
 		}
-
-		if (inputMap["a"] || inputMap["A"]) {
-			playerBox2 += speed;
+		else {
+			if (inputMap["d"] || inputMap["D"]) {
+				playerBox2 -= speed;
+			}
+			if (inputMap["a"] || inputMap["A"]) {
+				playerBox2 += speed;
+			}
 		}
 
 		playerBox2 = BABYLON.Scalar.Clamp(playerBox2, minZ, maxZ);
@@ -239,8 +292,8 @@ function createScene() {
 			fpsCamera.position.z = box.position.z;
 
 			// TODO decidere quale usare
-			fpsCamera.setTarget(sphere.position);
-			// fpsCamera.setTarget(groundHighMap.position);
+			// fpsCamera.setTarget(sphere.position);
+			fpsCamera.setTarget(groundHighMap.position);
 		}
 		
 		/* =======================
@@ -251,9 +304,43 @@ function createScene() {
 		sphere.position.x += ballDir.x * ballSpeed;
 		sphere.position.z += ballDir.z * ballSpeed;
 
-		// Limiti X
-		if (sphere.position.x >= ballLimit || sphere.position.x <= -ballLimit) {
+		/* =======================
+		BALL ↔ PADDLE COLLISION
+		======================= */
+
+		// Paddle destro
+		if (checkBallPaddleCollision(sphere, box) && ballDir.x > 0) {
 			ballDir.x *= -1;
+
+			// variazione angolo in base a dove colpisce il paddle
+			const hitOffset = sphere.position.z - box.position.z;
+			ballDir.z = hitOffset * 0.05;
+		}
+
+		// Paddle sinistro
+		if (checkBallPaddleCollision(sphere, box2) && ballDir.x < 0) {
+			ballDir.x *= -1;
+
+			const hitOffset = sphere.position.z - box2.position.z;
+			ballDir.z = hitOffset * 0.05;
+		}
+
+		// Limiti X
+		/* =======================
+		   GOAL + RESET
+		======================= */
+		if (sphere.position.x > ballLimit) {
+			// goal player 2
+			sphere.position.set(0, 4, 0);
+			ballDir = new BABYLON.Vector3(-0.15, 0, 0.2);
+			return;
+		}
+
+		if (sphere.position.x < -ballLimit) {
+			// goal player 1
+			sphere.position.set(0, 4, 0);
+			ballDir = new BABYLON.Vector3(0.15, 0, 0.2);
+			return;
 		}
 
 		// Limiti Z
