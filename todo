@@ -1,0 +1,5 @@
+[ ] viewport doppio per FPS:
+    - camera.viewport
+    - scene.addCameras che è praticamente una lista di oggetti
+        quindi esegui un push che è un push_back
+    - poi le scambi con activeCamera

@@ -51,17 +51,31 @@ function createScene() {
 	camera.attachControl(canvas, true);
 	scene.activeCamera = camera;
 
+
 	/* =======================
-	CAMERA FPS
+	CAMERA FPS player 1
 	======================= */
-	const fpsCamera = new BABYLON.UniversalCamera(
-		"fpsCamera",
+	const fpsCamera1 = new BABYLON.UniversalCamera(
+		"fpsCamera1",
 		new BABYLON.Vector3(0, 0, 0),
 		scene
 	);
 
-	fpsCamera.inputs.clear();
-	fpsCamera.attachControl(canvas, true);
+	fpsCamera1.inputs.clear();
+	fpsCamera1.attachControl(canvas, true);
+
+
+	/* =======================
+	CAMERA FPS player 2
+	======================= */
+	const fpsCamera2 = new BABYLON.UniversalCamera(
+		"fpsCamera2",
+		new BABYLON.Vector3(0, 0, 0),
+		scene
+	);
+
+	fpsCamera2.inputs.clear();
+	fpsCamera2.attachControl(canvas, true);
 
 	/* =======================
 	   LUCE
@@ -76,6 +90,8 @@ function createScene() {
 	/* =======================
 	SHADOW LIGHT
 	======================= */
+
+	// TODO 
 	const shadowLight = new BABYLON.DirectionalLight(
 		"shadowLight",
 		new BABYLON.Vector3(-1, -2, -1),
@@ -92,10 +108,15 @@ function createScene() {
 	======================= */
 	window.addEventListener("keydown", (e) => {
 		if (e.key === "c" || e.key === "C") {
-			scene.activeCamera =
-				scene.activeCamera === camera
-					? fpsCamera
-					: camera;
+			scene.activeCamera = camera;
+			scene.activeCamera.attachControl(canvas, true);
+		}
+		else if (e.key === "p" || e.key == "P") {
+			scene.activeCamera = fpsCamera2;
+			scene.activeCamera.attachControl(canvas, true);
+		}
+		else if (e.key === "m" || e.key == "M") {
+			scene.activeCamera = fpsCamera1;
 			scene.activeCamera.attachControl(canvas, true);
 		}
 	});
@@ -103,8 +124,6 @@ function createScene() {
 	/* =======================
 	SCOREBOARD AND NAMES UI
 	======================= */
-
-	// TODO ADD GUI FOR EACH PLAYER NAME
 
 	const ui = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
 
@@ -138,7 +157,7 @@ function createScene() {
 	ui.addControl(scoreText);
 
 	/* =======================
-	   PLAYER BOX
+	   BOX player 2
 	======================= */
 	const box = BABYLON.MeshBuilder.CreateBox("box1",
 		{
@@ -158,7 +177,7 @@ function createScene() {
 	box.position.set(25, 4, 0);
 
 	/* =======================
-	   BOX 2
+	   BOX player 1
 	======================= */
 
 	const box2 = BABYLON.MeshBuilder.CreateBox("box2", {
@@ -188,7 +207,7 @@ function createScene() {
 
 	sphere.position.set(0, 4, 0);
 	let ballDir = new BABYLON.Vector3(0.15, 0, 0.2);
-	const ballSpeed = 2;
+	let ballSpeed = 2.00;
 	const ballLimit = 24;
 
 	shadowGenerator.addShadowCaster(sphere);
@@ -259,10 +278,16 @@ function createScene() {
 	const maxZ = 25;
 	let ballActive = false;
 
+	// per AI player
+	const aiSpeed = 0.35;
+	const aiReactionDistance = 20; // quanto vicino deve essere la palla
+	let aiActive = false;
+
+
 	/* =======================
 	   FUNZIONE PER COLLISIONE PALLA <-> PADDLE
 	======================= */
-	function checkBallPaddleCollision(ball, paddle) {
+	function checkBallPaddleCollision(ball, paddle, player) {
 		const ballRadius = 1;
 		const paddleHalfZ = 2.5;
 		const paddleHalfX = 1;
@@ -274,6 +299,11 @@ function createScene() {
 		const collisionZ =
 			Math.abs(ball.position.z - paddle.position.z) <=
 			ballRadius + paddleHalfZ;
+
+		if (player == 1 && ball.position.x < 0 && scene.activeCamera == fpsCamera2)
+			scene.activeCamera = fpsCamera1;
+		else if (player == 2 && ball.position.x > 0 && scene.activeCamera == fpsCamera1)
+			scene.activeCamera = fpsCamera2;
 
 		return collisionX && collisionZ;
 	}
@@ -355,17 +385,31 @@ function createScene() {
 		box2.position.z = playerBox2;
 
 		/* =======================
-			CHANGE CAMERA TO FPS
+			CHANGE CAMERA TO FPS player 1
 		======================= */
 
-		if (scene.activeCamera === fpsCamera) {
-			fpsCamera.position.x = box.position.x + 20;
-			fpsCamera.position.y = box.position.y + 3;
-			fpsCamera.position.z = box.position.z;
+		if (scene.activeCamera === fpsCamera2) {
+			fpsCamera2.position.x = box.position.x + 20;
+			fpsCamera2.position.y = box.position.y + 3;
+			fpsCamera2.position.z = box.position.z;
 
 			// TODO decidere quale usare
-			// fpsCamera.setTarget(sphere.position);
-			fpsCamera.setTarget(groundHighMap.position);
+			fpsCamera2.setTarget(sphere.position);
+			// fpsCamera2.setTarget(groundHighMap.position);
+		}
+		
+		/* =======================
+			CHANGE CAMERA TO FPS player 2
+		======================= */
+
+		if (scene.activeCamera === fpsCamera1) {
+			fpsCamera1.position.x = box2.position.x - 20;
+			fpsCamera1.position.y = box2.position.y + 3;
+			fpsCamera1.position.z = box2.position.z;
+
+			console.log(scene.activeCamera === fpsCamera1);
+			// TODO decidere quale usare
+			fpsCamera1.setTarget(sphere.position);
 		}
 
 		/* =======================
@@ -383,7 +427,7 @@ function createScene() {
 		======================= */
 
 		// Paddle destro
-		if (checkBallPaddleCollision(sphere, box) && ballDir.x > 0) {
+		if (checkBallPaddleCollision(sphere, box, 2) && ballDir.x > 0) {
 			ballDir.x *= -1;
 
 			// variazione angolo in base a dove colpisce il paddle
@@ -392,12 +436,32 @@ function createScene() {
 		}
 
 		// Paddle sinistro
-		if (checkBallPaddleCollision(sphere, box2) && ballDir.x < 0) {
+		if (checkBallPaddleCollision(sphere, box2, 1) && ballDir.x < 0) {
 			ballDir.x *= -1;
 
 			const hitOffset = sphere.position.z - box2.position.z;
 			ballDir.z = hitOffset * 0.05;
 		}
+
+		/* =======================
+		   AI PLAYER
+		======================= */
+		// TODO decomment
+		// if (!gameOver) {
+		// 	const distanceX = Math.abs(sphere.position.x - box2.position.x);
+
+		// 	if (aiActive && distanceX < aiReactionDistance) {
+		// 		if (sphere.position.z > box2.position.z + 0.7) {
+		// 			playerBox2 += aiSpeed;
+		// 		}
+		// 		else if (sphere.position.z < box2.position.z - 0.7) {
+		// 			playerBox2 -= aiSpeed;
+		// 		}
+		// 	}
+
+		// 	playerBox2 = BABYLON.Scalar.Clamp(playerBox2, minZ, maxZ);
+		// 	box2.position.z = playerBox2;
+		// }
 
 		// Limiti X
 		/* =======================
@@ -409,6 +473,7 @@ function createScene() {
 			sphere.position.set(0, 4, 0);
 			ballDir = new BABYLON.Vector3(-0.15, 0, 0.2);
 			ballActive = false;
+			ballSpeed += 0.05;
 			playerBox = 0;
 			playerBox2 = 0;
 			box.position.set(25, 4, 0);
@@ -427,6 +492,7 @@ function createScene() {
 			sphere.position.set(0, 4, 0);
 			ballDir = new BABYLON.Vector3(0.15, 0, 0.2);
 			ballActive = false;
+			ballSpeed += 0.05;
 			playerBox = 0;
 			playerBox2 = 0;
 			box.position.set(25, 4, 0);
