@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Pong Online Tester</title>
+        <!-- Load Babylon.js and GUI from global CDN to avoid ES module split-brain issues -->
+        <script src="https://cdn.babylonjs.com/babylon.js"></script>
+        <script src="https://cdn.babylonjs.com/gui/babylon.gui.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: #fff;
+            display: flex;
+            height: 100vh;
+        }
+        
+        #sidebar {
+            width: 350px;
+            background-color: #2a2a2a;
+            padding: 20px;
+            overflow-y: auto;
+            border-right: 2px solid #00ff00;
+        }
+        
+        #game-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #game-info {
+            background-color: #2a2a2a;
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #00ff00;
+        }
+        
+        #renderCanvas {
+            flex: 1;
+            width: 100%;
+            height: 100%;
+            display: block;
+            outline: none;
+        }
+        
+        h2 {
+            color: #00ff00;
+            margin-top: 0;
+            border-bottom: 2px solid #00ff00;
+            padding-bottom: 10px;
+        }
+        
+        .section {
+            background-color: #333;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            border: 1px solid #444;
+        }
+        
+        .section h3 {
+            margin: 0 0 10px 0;
+            color: #00ff00;
+            font-size: 16px;
+        }
+        
+        input {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            background-color: #222;
+            border: 1px solid #555;
+            border-radius: 4px;
+            color: #fff;
+            box-sizing: border-box;
+        }
+        
+        button {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        
+        button:hover:not(:disabled) {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #555;
+            cursor: not-allowed;
+            opacity: 0.5;
+        }
+        
+        button.danger {
+            background-color: #dc3545;
+        }
+        
+        button.danger:hover:not(:disabled) {
+            background-color: #c82333;
+        }
+        
+        button.success {
+            background-color: #28a745;
+        }
+        
+        button.success:hover:not(:disabled) {
+            background-color: #218838;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 3px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        
+        .status.connected {
+            background-color: #28a745;
+        }
+        
+        .status.disconnected {
+            background-color: #dc3545;
+        }
+        
+        .status.in-game {
+            background-color: #17a2b8;
+        }
+        
+        .status.matchmaking {
+            background-color: #ffc107;
+            color: #000;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 5px 0;
+        }
+        
+        .info-label {
+            color: #aaa;
+            font-size: 14px;
+        }
+        
+        .info-value {
+            color: #00ff00;
+            font-weight: bold;
+        }
+        
+        #log {
+            background-color: #000;
+            color: #00ff00;
+            padding: 10px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 11px;
+            border: 1px solid #00ff00;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+        
+        .score-display {
+            font-size: 24px;
+            text-align: center;
+            padding: 10px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="sidebar">
+        <h2>🏓 Pong Online Tester</h2>
+        
+        <div class="section">
+            <h3>🔐 Authentication</h3>
+            <input type="email" id="emailInput" placeholder="Email" value="test1@gmail.com">
+            <input type="password" id="passwordInput" placeholder="Password" value="1234">
+            <button id="loginBtn" class="success">Login & Connect</button>
+            <button id="logoutBtn" class="danger" style="display: none;">Logout</button>
+        </div>
+        
+        <div class="section">
+            <h3>📊 Status</h3>
+            <div class="info-row">
+                <span class="info-label">Game Mode:</span>
+                <select id="gameModeSelect" style="background-color: #222; color: #fff; border: 1px solid #555; padding: 5px; border-radius: 4px;">
+                    <option value="online">Online Multiplayer</option>
+                    <option value="offline-multiplayer">Offline Multiplayer</option>
+                    <option value="offline-ai">Offline vs AI</option>
+                </select>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Connection:</span>
+                <span id="statusDisplay" class="status disconnected">Disconnected</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">User ID:</span>
+                <span id="userIdDisplay" class="info-value">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Game ID:</span>
+                <span id="gameIdDisplay" class="info-value">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Your Side:</span>
+                <span id="sideDisplay" class="info-value">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Opponent:</span>
+                <span id="opponentDisplay" class="info-value">-</span>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h3>🎮 Matchmaking</h3>
+            <button id="joinMatchmakingBtn" class="success" disabled>Join Matchmaking</button>
+            <button id="leaveMatchmakingBtn" class="danger" disabled>Leave Matchmaking</button>
+        </div>
+        
+        <div class="section">
+            <h3>🎯 Custom Game</h3>
+            <input type="text" id="opponentIdInput" placeholder="Opponent User ID" disabled>
+            <button id="createCustomBtn" disabled>Create Custom Game</button>
+            <input type="text" id="gameIdInput" placeholder="Game ID to Join" disabled>
+            <button id="joinCustomBtn" disabled>Join Custom Game</button>
+        </div>
+        
+        <div class="section">
+            <h3>⚙️ Game Controls</h3>
+            <button id="startOfflineBtn" class="success" style="display: none;">Start Offline Game</button>
+            <button id="stopOfflineBtn" class="danger" style="display: none;">Stop Offline Game</button>
+            <button id="readyBtn" class="success" disabled>Ready</button>
+            <button id="notReadyBtn" class="danger" disabled>Not Ready</button>
+            <button id="quitBtn" class="danger" disabled>Quit Game</button>
+            <div class="score-display">
+                <div><span id="leftPlayerName">Player 1</span>: <span id="leftScore">0</span></div>
+                <div style="margin: 5px 0;">VS</div>
+                <div><span id="rightPlayerName">Player 2</span>: <span id="rightScore">0</span></div>
+            </div>
+        </div>
+        
+        <div class="section">
+            <h3>📝 Log</h3>
+            <button id="clearLogBtn">Clear Log</button>
+            <div id="log"></div>
+        </div>
+    </div>
+    
+    <div id="game-container">
+        <div id="game-info">
+            <div>
+                <strong>Controls:</strong> <span id="controlsText">Arrow Keys / W & S to move paddle</span>
+            </div>
+            <div>
+                <strong>Mode:</strong> <span id="gameModeDisplay">Waiting...</span>
+            </div>
+        </div>
+        <canvas id="renderCanvas"></canvas>
+    </div>
+    
+    <script>
+        // Access global BABYLON.GUI namespace
+        const GUI = BABYLON.GUI;
+        
+        // Configuration
+        const GATEWAY_URL = 'https://localhost:3000';
+        const WS_URL = 'wss://localhost:3000/pong/ws';
+        
+        // State
+        let ws = null;
+        let currentUserId = null;
+        let currentGameId = null;
+        let playerSide = null;
+        let opponentUsername = null;
+        let isInMatchmaking = false;
+        
+        // Offline game state
+        let gameMode = 'online';
+        let isOfflineGame = false;
+        let localBallVelocity = { x: 0.3, z: 0.3 };
+        let localScores = { left: 0, right: 0 };
+        let maxScore = 5;
+        let leftPaddleSpeed = 0;
+        let rightPaddleSpeed = 0;
+        let keys = {};
+        let aiDifficulty = 0.15; // AI paddle speed
+        
+        // Player ID to side mapping (cached from paddle positions)
+        let leftPlayerId = null;
+        let rightPlayerId = null;
+
+        // Interpolation targets
+        let targetBallPos = null;
+        let targetLeftPaddlePos = null;
+        let targetRightPaddlePos = null;
+        
+        // Babylon.js setup
+        const canvas = document.getElementById('renderCanvas');
+        const engine = new BABYLON.Engine(canvas, true);
+        let scene = null;
+        let leftPaddle = null;
+        let rightPaddle = null;
+        let ball = null;
+        let scoreText = null;
+        let playerName1Text = null;
+        let playerName2Text = null;
+        let gameOverText = null;
+        
+        // World bounds
+        const WORLD_BOUNDS = { minX: -25, maxX: 25, minZ: -25, maxZ: 25 };
+        const PADDLE_BOUNDS = { minZ: -20, maxZ: 20 };
+        const PADDLE_SPEED = 0.8;
+        const BALL_SPEED = 0.3;
+        
+        // Local game functions
+        function resetBall() {
+            if (!ball) return;
+            ball.position.set(0, 4, 0);
+            const direction = Math.random() < 0.5 ? -1 : 1;
+            const angle = (Math.random() - 0.5) * 0.5;
+            localBallVelocity.x = direction * BALL_SPEED;
+            localBallVelocity.z = angle * BALL_SPEED;
+        }
+        
+        function updateLocalGamePhysics() {
+            if (!isOfflineGame || !ball || !leftPaddle || !rightPaddle) return;
+            
+            // Move ball
+            ball.position.x += localBallVelocity.x;
+            ball.position.z += localBallVelocity.z;
+            
+            // Ball collision with top/bottom walls
+            if (ball.position.z <= WORLD_BOUNDS.minZ || ball.position.z >= WORLD_BOUNDS.maxZ) {
+                localBallVelocity.z *= -1;
+                ball.position.z = Math.max(WORLD_BOUNDS.minZ, Math.min(WORLD_BOUNDS.maxZ, ball.position.z));
+            }
+            
+            // Ball collision with paddles
+            const ballRadius = 1;
+            const paddleWidth = 2;
+            const paddleHeight = 5;
+            
+            // Left paddle collision
+            if (ball.position.x <= leftPaddle.position.x + paddleWidth/2 + ballRadius &&
+                ball.position.x >= leftPaddle.position.x - paddleWidth/2 &&
+                ball.position.z >= leftPaddle.position.z - paddleHeight/2 &&
+                ball.position.z <= leftPaddle.position.z + paddleHeight/2 &&
+                localBallVelocity.x < 0) {
+                localBallVelocity.x *= -1.05; // Slight speed increase
+                const relativeIntersectZ = (ball.position.z - leftPaddle.position.z) / (paddleHeight/2);
+                localBallVelocity.z = relativeIntersectZ * BALL_SPEED;
+            }
+            
+            // Right paddle collision
+            if (ball.position.x >= rightPaddle.position.x - paddleWidth/2 - ballRadius &&
+                ball.position.x <= rightPaddle.position.x + paddleWidth/2 &&
+                ball.position.z >= rightPaddle.position.z - paddleHeight/2 &&
+                ball.position.z <= rightPaddle.position.z + paddleHeight/2 &&
+                localBallVelocity.x > 0) {
+                localBallVelocity.x *= -1.05; // Slight speed increase
+                const relativeIntersectZ = (ball.position.z - rightPaddle.position.z) / (paddleHeight/2);
+                localBallVelocity.z = relativeIntersectZ * BALL_SPEED;
+            }
+            
+            // Score detection
+            if (ball.position.x <= WORLD_BOUNDS.minX) {
+                localScores.right++;
+                updateLocalScores();
+                resetBall();
+                if (localScores.right >= maxScore) endLocalGame('right');
+            } else if (ball.position.x >= WORLD_BOUNDS.maxX) {
+                localScores.left++;
+                updateLocalScores();
+                resetBall();
+                if (localScores.left >= maxScore) endLocalGame('left');
+            }
+            
+            // Update paddle positions based on input
+            updatePaddleMovement();
+            
+            // AI logic for single player
+            if (gameMode === 'offline-ai') {
+                updateAI();
+            }
+        }
+        
+        function updatePaddleMovement() {
+            // Left paddle (Player 1: W/S or Arrow keys in offline multiplayer)
+            if (gameMode === 'offline-multiplayer') {
+                if (keys['w'] || keys['W']) leftPaddleSpeed = PADDLE_SPEED;
+                else if (keys['s'] || keys['S']) leftPaddleSpeed = -PADDLE_SPEED;
+                else leftPaddleSpeed = 0;
+            } else if (gameMode === 'offline-ai') {
+                // Human player controls left paddle
+                if (keys['ArrowUp'] || keys['w'] || keys['W']) leftPaddleSpeed = PADDLE_SPEED;
+                else if (keys['ArrowDown'] || keys['s'] || keys['S']) leftPaddleSpeed = -PADDLE_SPEED;
+                else leftPaddleSpeed = 0;
+            }
+            
+            // Right paddle (Player 2: Arrow keys in offline multiplayer)
+            if (gameMode === 'offline-multiplayer') {
+                if (keys['ArrowUp']) rightPaddleSpeed = PADDLE_SPEED;
+                else if (keys['ArrowDown']) rightPaddleSpeed = -PADDLE_SPEED;
+                else rightPaddleSpeed = 0;
+            }
+            
+            // Apply movement
+            leftPaddle.position.z += leftPaddleSpeed;
+            rightPaddle.position.z += rightPaddleSpeed;
+            
+            // Keep paddles in bounds
+            leftPaddle.position.z = Math.max(PADDLE_BOUNDS.minZ, Math.min(PADDLE_BOUNDS.maxZ, leftPaddle.position.z));
+            rightPaddle.position.z = Math.max(PADDLE_BOUNDS.minZ, Math.min(PADDLE_BOUNDS.maxZ, rightPaddle.position.z));
+        }
+        
+        function updateAI() {
+            // Simple AI: follow the ball with some delay and imperfection
+            const ballZ = ball.position.z;
+            const paddleZ = rightPaddle.position.z;
+            const diff = ballZ - paddleZ;
+            
+            if (Math.abs(diff) > 1) {
+                if (diff > 0) {
+                    rightPaddle.position.z += aiDifficulty;
+                } else {
+                    rightPaddle.position.z -= aiDifficulty;
+                }
+            }
+            
+            // Keep AI paddle in bounds
+            rightPaddle.position.z = Math.max(PADDLE_BOUNDS.minZ, Math.min(PADDLE_BOUNDS.maxZ, rightPaddle.position.z));
+        }
+        
+        function updateLocalScores() {
+            scoreText.text = `${localScores.left} : ${localScores.right}`;
+            document.getElementById('leftScore').textContent = localScores.left;
+            document.getElementById('rightScore').textContent = localScores.right;
+        }
+        
+        function startOfflineGame() {
+            const mode = document.getElementById('gameModeSelect').value;
+            gameMode = mode;
+            isOfflineGame = true;
+            
+            // Reset game state
+            localScores = { left: 0, right: 0 };
+            updateLocalScores();
+            resetBall();
+            
+            // Reset paddle positions
+            leftPaddle.position.set(-25, 4, 0);
+            rightPaddle.position.set(25, 4, 0);
+            
+            // Update UI
+            if (gameMode === 'offline-ai') {
+                playerName1Text.text = 'You';
+                playerName2Text.text = 'AI';
+                document.getElementById('leftPlayerName').textContent = 'You';
+                document.getElementById('rightPlayerName').textContent = 'AI';
+            } else {
+                playerName1Text.text = 'Player 1';
+                playerName2Text.text = 'Player 2';
+                document.getElementById('leftPlayerName').textContent = 'Player 1';
+                document.getElementById('rightPlayerName').textContent = 'Player 2';
+            }
+            
+            gameOverText.text = '';
+            log(`Started ${gameMode} game`, 'success');
+            updateUI();
+        }
+        
+        function stopOfflineGame() {
+            isOfflineGame = false;
+            gameMode = 'online';
+            document.getElementById('gameModeSelect').value = 'online';
+            
+            // Reset display
+            playerName1Text.text = 'Player 1';
+            playerName2Text.text = 'Player 2';
+            document.getElementById('leftPlayerName').textContent = 'Player 1';
+            document.getElementById('rightPlayerName').textContent = 'Player 2';
+            gameOverText.text = '';
+            
+            log('Stopped offline game', 'info');
+            updateUI();
+        }
+        
+        function endLocalGame(winner) {
+            const winnerText = winner === 'left' ? 
+                (gameMode === 'offline-ai' ? '🎉 YOU WON!' : '🎉 Player 1 Wins!') :
+                (gameMode === 'offline-ai' ? '🤖 AI WINS!' : '🎉 Player 2 Wins!');
+            
+            gameOverText.text = winnerText;
+            log(winnerText, 'success');
+            
+            setTimeout(() => {
+                localScores = { left: 0, right: 0 };
+                updateLocalScores();
+                resetBall();
+                gameOverText.text = '';
+            }, 3000);
+        }
+        
+        // Initialize scene
+        function createScene() {
+            const newScene = new BABYLON.Scene(engine);
+            newScene.clearColor = new BABYLON.Color3(0.6, 0.5, 0);
+            
+            // Camera
+            const camera = new BABYLON.UniversalCamera("camera", new BABYLON.Vector3(0, 50, -55), newScene);
+            camera.inputs.clear();
+            camera.attachControl(canvas, true);
+            newScene.activeCamera = camera;
+            
+            // Light
+            const light = new BABYLON.HemisphericLight("light", new BABYLON.Vector3(60, 100, 20), newScene);
+            light.intensity = 0.5;
+            
+            // Shadow light
+            const shadowLight = new BABYLON.DirectionalLight("shadowLight", new BABYLON.Vector3(-1, -2, -1), newScene);
+            shadowLight.position = new BABYLON.Vector3(0, 40, 0);
+            const shadowGenerator = new BABYLON.ShadowGenerator(1024, shadowLight);
+            shadowGenerator.useBlurExponentialShadowMap = true;
+            shadowGenerator.blurKernel = 32;
+            
+            // UI
+            const ui = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI", true, newScene);
+            
+            scoreText = new GUI.TextBlock();
+            scoreText.text = "0 : 0";
+            scoreText.color = "white";
+            scoreText.fontSize = 48;
+            scoreText.fontFamily = "Arial";
+            scoreText.top = "-40%";
+            ui.addControl(scoreText);
+            
+            playerName1Text = new GUI.TextBlock();
+            playerName1Text.text = "Player 1";
+            playerName1Text.color = "white";
+            playerName1Text.fontFamily = "Arial";
+            playerName1Text.fontSize = 48;
+            playerName1Text.top = "-40%";
+            playerName1Text.left = "-40%";
+            ui.addControl(playerName1Text);
+            
+            playerName2Text = new GUI.TextBlock();
+            playerName2Text.text = "Player 2";
+            playerName2Text.color = "white";
+            playerName2Text.fontFamily = "Arial";
+            playerName2Text.fontSize = 48;
+            playerName2Text.top = "-40%";
+            playerName2Text.left = "40%";
+            ui.addControl(playerName2Text);
+            
+            gameOverText = new GUI.TextBlock();
+            gameOverText.text = "";
+            gameOverText.color = "red";
+            gameOverText.top = "-35%";
+            gameOverText.fontSize = 48;
+            gameOverText.fontFamily = "Arial";
+            ui.addControl(gameOverText);
+            
+            // Right paddle
+            rightPaddle = BABYLON.MeshBuilder.CreateBox("rightPaddle", {
+                height: 1, width: 2, depth: 5,
+                faceColors: Array(6).fill(new BABYLON.Color4(1, 0, 0, 1))
+            }, newScene);
+            rightPaddle.position.set(25, 4, 0);
+            
+            // Left paddle
+            leftPaddle = BABYLON.MeshBuilder.CreateBox("leftPaddle", {
+                height: 1, width: 2, depth: 5,
+                faceColors: Array(6).fill(new BABYLON.Color4(0, 0, 1, 1))
+            }, newScene);
+            leftPaddle.position.set(-25, 4, 0);
+            
+            // Ball
+            ball = BABYLON.MeshBuilder.CreateSphere("ball", { diameter: 2, segments: 32 }, newScene);
+            ball.position.set(0, 4, 0);
+
+            const ballMaterial = new BABYLON.StandardMaterial("ballMat", newScene);
+            ballMaterial.diffuseColor = new BABYLON.Color3(1, 1, 1);
+            ballMaterial.specularColor = new BABYLON.Color3(1, 1, 1);
+            ballMaterial.emissiveColor = new BABYLON.Color3(0.2, 0.2, 0.2);
+            ball.material = ballMaterial;
+            
+            shadowGenerator.addShadowCaster(ball);
+            shadowGenerator.addShadowCaster(rightPaddle);
+            shadowGenerator.addShadowCaster(leftPaddle);
+            
+            // Ground
+            const ground = BABYLON.MeshBuilder.CreateGround("ground", { width: 80, height: 60 }, newScene);
+            ground.position.y = -1;
+            ground.receiveShadows = true;
+            
+            const groundMaterial = new BABYLON.StandardMaterial("groundMat", newScene);
+            groundMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.6, 0.2);
+            groundMaterial.specularColor = BABYLON.Color3.Black();
+            ground.material = groundMaterial;
+            
+            camera.setTarget(ground.position);
+
+            // Initialize targets to default positions
+            targetBallPos = ball.position.clone();
+            targetLeftPaddlePos = leftPaddle.position.clone();
+            targetRightPaddlePos = rightPaddle.position.clone();
+            
+            return newScene;
+        }
+        
+        scene = createScene();
+        
+        // Render loop
+        engine.runRenderLoop(() => {
+            if (scene) {
+                if (isOfflineGame) {
+                    // Local game physics
+                    updateLocalGamePhysics();
+                } else if (currentGameId && targetBallPos) {
+                    // Online game interpolation
+                    const ballLerpSpeed = 0.5;    // Faster for ball - makes bounces look crisp
+                    const paddleLerpSpeed = 0.3;  // Smoother for paddles
+                    
+                    ball.position = BABYLON.Vector3.Lerp(ball.position, targetBallPos, ballLerpSpeed);
+                    leftPaddle.position = BABYLON.Vector3.Lerp(leftPaddle.position, targetLeftPaddlePos, paddleLerpSpeed);
+                    rightPaddle.position = BABYLON.Vector3.Lerp(rightPaddle.position, targetRightPaddlePos, paddleLerpSpeed);
+                }
+                
+                scene.render();
+            }
+        });
+        
+        window.addEventListener("resize", () => {
+            engine.resize();
+        });
+        
+        // Logging
+        function log(message, type = 'info') {
+            const logElement = document.getElementById('log');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#ff5555' : 
+                         type === 'success' ? '#55ff55' : 
+                         type === 'warn' ? '#ffff55' : '#00ff00';
+            logElement.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('log').innerHTML = '';
+        }
+        
+        // Update UI
+        function updateUI() {
+            const connected = ws && ws.readyState === WebSocket.OPEN;
+            const inGame = currentGameId !== null;
+            const selectedMode = document.getElementById('gameModeSelect').value;
+            
+            // Status
+            let statusText = 'Disconnected';
+            let statusClass = 'disconnected';
+            if (isOfflineGame) {
+                statusText = 'Offline Game';
+                statusClass = 'in-game';
+            } else if (connected) {
+                if (inGame) {
+                    statusText = 'In Game';
+                    statusClass = 'in-game';
+                } else if (isInMatchmaking) {
+                    statusText = 'Matchmaking';
+                    statusClass = 'matchmaking';
+                } else {
+                    statusText = 'Connected';
+                    statusClass = 'connected';
+                }
+            }
+            
+            document.getElementById('statusDisplay').textContent = statusText;
+            document.getElementById('statusDisplay').className = `status ${statusClass}`;
+            document.getElementById('userIdDisplay').textContent = currentUserId || '-';
+            document.getElementById('gameIdDisplay').textContent = currentGameId || '-';
+            document.getElementById('sideDisplay').textContent = playerSide || '-';
+            document.getElementById('opponentDisplay').textContent = opponentUsername || '-';
+            
+            // Game mode display
+            let modeText = 'Waiting...';
+            if (isOfflineGame) {
+                modeText = gameMode === 'offline-ai' ? 'Offline vs AI' : 'Offline Multiplayer';
+            } else if (inGame) {
+                modeText = 'Online Match';
+            }
+            document.getElementById('gameModeDisplay').textContent = modeText;
+            
+            // Controls text
+            let controlsText = 'Arrow Keys / W & S to move paddle';
+            if (isOfflineGame && gameMode === 'offline-multiplayer') {
+                controlsText = 'Player 1: W/S | Player 2: Arrow Keys';
+            } else if (isOfflineGame && gameMode === 'offline-ai') {
+                controlsText = 'Arrow Keys / W & S to move paddle';
+            }
+            document.getElementById('controlsText').textContent = controlsText;
+            
+            // Game mode selector
+            document.getElementById('gameModeSelect').disabled = connected || isOfflineGame;
+            
+            // Offline controls
+            const showOfflineControls = selectedMode !== 'online' && !connected;
+            document.getElementById('startOfflineBtn').style.display = showOfflineControls && !isOfflineGame ? 'block' : 'none';
+            document.getElementById('stopOfflineBtn').style.display = isOfflineGame ? 'block' : 'none';
+            
+            // Online controls
+            const showOnlineControls = selectedMode === 'online';
+            document.getElementById('emailInput').disabled = connected || !showOnlineControls;
+            document.getElementById('passwordInput').disabled = connected || !showOnlineControls;
+            document.getElementById('loginBtn').style.display = connected || !showOnlineControls ? 'none' : 'block';
+            document.getElementById('logoutBtn').style.display = connected && showOnlineControls ? 'block' : 'none';
+            document.getElementById('joinMatchmakingBtn').disabled = !connected || inGame || isInMatchmaking || !showOnlineControls;
+            document.getElementById('leaveMatchmakingBtn').disabled = !connected || !isInMatchmaking || !showOnlineControls;
+            document.getElementById('opponentIdInput').disabled = !connected || inGame || !showOnlineControls;
+            document.getElementById('createCustomBtn').disabled = !connected || inGame || !showOnlineControls;
+            document.getElementById('gameIdInput').disabled = !connected || inGame || !showOnlineControls;
+            document.getElementById('joinCustomBtn').disabled = !connected || inGame || !showOnlineControls;
+            document.getElementById('readyBtn').disabled = !connected || !inGame || !showOnlineControls;
+            document.getElementById('notReadyBtn').disabled = !connected || !inGame || !showOnlineControls;
+            document.getElementById('quitBtn').disabled = !connected || !inGame || !showOnlineControls;
+        }
+        
+        // Login
+        async function login() {
+            const email = document.getElementById('emailInput').value.trim();
+            const password = document.getElementById('passwordInput').value.trim();
+            
+            if (!email || !password) {
+                log('Please enter email and password', 'error');
+                return;
+            }
+            
+            try {
+                log('Logging in...', 'info');
+                
+                const response = await fetch(`${GATEWAY_URL}/auth/login`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.error || errorData.message || response.statusText || 'Login failed');
+                }
+                
+                const data = await response.json();
+                currentUserId = data.user.id;
+                
+                log(`✓ Logged in as ${currentUserId}`, 'success');
+                connectWs();
+            } catch (err) {
+                if (err.message === 'Failed to fetch') {
+                    const msg = `Login failed: Network error.\n\nSince the backend uses self-signed certificates, functionality is blocked until you trust them.\n\nPlease open ${GATEWAY_URL} in a new tab, acccept the security warning, and then try again here.`;
+                    log(msg, 'error');
+                    alert(msg);
+                } else {
+                    log(`Login failed: ${err.message}`, 'error');
+                }
+            }
+        }
+        
+        // WebSocket
+        function connectWs() {
+            if (ws) return;
+            
+            try {
+                log('Connecting to WebSocket...', 'info');
+                ws = new WebSocket(WS_URL);
+                
+                ws.onopen = function() {
+                    log('✓ WebSocket connected', 'success');
+                    updateUI();
+                    sendMessage('ping', {});
+                };
+                
+                ws.onmessage = function(event) {
+                    try {
+                        const message = JSON.parse(event.data);
+                        handleMessage(message);
+                    } catch (e) {
+                        log('Error parsing message: ' + e.message, 'error');
+                    }
+                };
+                
+                ws.onclose = function(event) {
+                    log(`Connection closed (code: ${event.code})`, 'error');
+                    ws = null;
+                    currentGameId = null;
+                    playerSide = null;
+                    opponentUsername = null;
+                    isInMatchmaking = false;
+                    updateUI();
+                };
+                
+                ws.onerror = function() {
+                    log('WebSocket error', 'error');
+                };
+            } catch (e) {
+                log('Failed to connect: ' + e.message, 'error');
+            }
+        }
+        
+        function logout() {
+            if (ws) ws.close();
+            ws = null;
+            currentUserId = null;
+            currentGameId = null;
+            playerSide = null;
+            opponentUsername = null;
+            isInMatchmaking = false;
+            leftPlayerId = null;
+            rightPlayerId = null;
+            gameOverText.text = "";
+            log('Logged out', 'info');
+            updateUI();
+        }
+        
+        function sendMessage(event, data) {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ event, data }));
+                if (event !== 'pong.paddleMove') {
+                    log(`→ ${event}`, 'info');
+                }
+            } else {
+                log('Cannot send: not connected', 'error');
+            }
+        }
+        
+        // Handle messages
+        function handleMessage(message) {
+            switch (message.event) {
+                case 'pong':
+                    break;
+                    
+                case 'pong.matchedInRandomGame':
+                    currentGameId = message.data.gameId;
+                    playerSide = message.data.yourSide;
+                    opponentUsername = message.data.opponentUsername;
+                    isInMatchmaking = false;
+                    log(`Matched! You're ${playerSide} vs ${opponentUsername}`, 'success');
+                    updatePlayerNames();
+                    updateUI();
+                    setTimeout(() => setReady(true), 200);
+                    break;
+                    
+                case 'pong.gameStarted':
+                    playerSide = message.data.yourSide;
+                    opponentUsername = message.data.opponentUsername;
+                    log(`Game starting! You're ${playerSide}`, 'success');
+                    updatePlayerNames();
+                    updateUI();
+                    break;
+                    
+                case 'pong.gameState':
+                    updateGameState(message.data);
+                    break;
+                    
+                case 'pong.score':
+                    updateScores(message.data.scores);
+                    break;
+                    
+                case 'pong.gameEnded':
+                    handleGameEnd(message.data);
+                    break;
+                    
+                case 'pong.customGameCreated':
+                    currentGameId = message.data.gameId;
+                    opponentUsername = message.data.otherUsername;
+                    log(`Custom game created! Waiting for ${opponentUsername}...`, 'success');
+                    updateUI();
+                    break;
+                    
+                case 'pong.customGameJoinSuccess':
+                    currentGameId = message.data.gameId;
+                    opponentUsername = message.data.creatorUsername;
+                    log(`Joined ${opponentUsername}'s game!`, 'success');
+                    updateUI();
+                    break;
+                    
+                case 'error':
+                    log(`Error: ${message.data.message}`, 'error');
+                    break;
+                    
+                default:
+                    if (message.event !== 'pong.paddleMove') {
+                        log(`Event: ${message.event}`, 'info');
+                    }
+            }
+        }
+
+        function updatePlayerNames() {
+            if (playerSide === 'left') {
+                playerName1Text.text = 'You';
+                playerName2Text.text = opponentUsername || 'Opponent';
+                document.getElementById('leftPlayerName').textContent = 'You';
+                document.getElementById('rightPlayerName').textContent = opponentUsername || 'Opponent';
+            } else {
+                playerName1Text.text = opponentUsername || 'Opponent';
+                playerName2Text.text = 'You';
+                document.getElementById('leftPlayerName').textContent = opponentUsername || 'Opponent';
+                document.getElementById('rightPlayerName').textContent = 'You';
+            }
+        }
+
+        function updateGameState(data) {
+            if (!currentGameId) return;
+
+            // Convert normalized coords to world coords
+            const ballX = WORLD_BOUNDS.minX + data.ball.x * (WORLD_BOUNDS.maxX - WORLD_BOUNDS.minX);
+            const ballZ = WORLD_BOUNDS.maxZ - data.ball.y * (WORLD_BOUNDS.maxZ - WORLD_BOUNDS.minZ);
+            
+            // Update target instead of position directly
+            targetBallPos.x = ballX;
+            targetBallPos.z = ballZ;
+            
+            // Update paddles - identify by paddle.x position (0 = left, 1 = right)
+            // This is more reliable than Object.entries order
+            // Also cache player ID to side mapping for score updates
+            for (const [playerId, paddle] of Object.entries(data.paddles)) {
+                const paddleZ = WORLD_BOUNDS.maxZ - (paddle.y + paddle.height / 2) * (WORLD_BOUNDS.maxZ - WORLD_BOUNDS.minZ);
+                
+                // Use paddle.x to determine which paddle this is
+                // x === 0 means left paddle, x === 1 means right paddle
+                if (paddle.x === 0 || paddle.x < 0.5) {
+                    targetLeftPaddlePos.z = paddleZ;
+                    leftPlayerId = playerId;  // Cache for score updates
+                } else {
+                    targetRightPaddlePos.z = paddleZ;
+                    rightPlayerId = playerId;  // Cache for score updates
+                }
+            }
+            
+            updateScores(data.scores);
+        }
+        
+        function updateScores(scores) {
+            // Get scores by player position using cached player IDs
+            let leftScore = 0;
+            let rightScore = 0;
+            
+            // Use cached player ID to side mapping
+            if (leftPlayerId && scores[leftPlayerId] !== undefined) {
+                leftScore = scores[leftPlayerId];
+            }
+            if (rightPlayerId && scores[rightPlayerId] !== undefined) {
+                rightScore = scores[rightPlayerId];
+            }
+            
+            // Fallback if we haven't received paddle data yet - use playerSide from server
+            if (!leftPlayerId && !rightPlayerId && playerSide) {
+                const scoreKeys = Object.keys(scores);
+                if (scoreKeys.length >= 2) {
+                    // Current user's score goes to their side
+                    const myScore = scores[currentUserId] || scores[String(currentUserId)] || 0;
+                    const opponentId = scoreKeys.find(k => k !== String(currentUserId));
+                    const opponentScore = opponentId ? scores[opponentId] : 0;
+                    
+                    if (playerSide === 'left') {
+                        leftScore = myScore;
+                        rightScore = opponentScore;
+                    } else {
+                        leftScore = opponentScore;
+                        rightScore = myScore;
+                    }
+                }
+            }
+            
+            scoreText.text = `${leftScore} : ${rightScore}`;
+            document.getElementById('leftScore').textContent = leftScore;
+            document.getElementById('rightScore').textContent = rightScore;
+        }
+        
+        function handleGameEnd(data) {
+            const isWinner = data.winner === currentUserId;
+            const resultText = isWinner ? '🎉 YOU WON!' : '😢 You Lost';
+            log(`${resultText}`, isWinner ? 'success' : 'warn');
+            gameOverText.text = resultText;
+            
+            currentGameId = null;
+            playerSide = null;
+            leftPlayerId = null;
+            rightPlayerId = null;
+            
+            setTimeout(() => {
+                opponentUsername = null;
+                gameOverText.text = "";
+                updateUI();
+            }, 3000);
+        }
+        
+        // Game actions
+        function joinMatchmaking() {
+            sendMessage('pong.joinMatchmaking', {});
+            isInMatchmaking = true;
+            log('Joining matchmaking...', 'info');
+            updateUI();
+        }
+        
+        function leaveMatchmaking() {
+            sendMessage('pong.leaveMatchmaking', {});
+            isInMatchmaking = false;
+            log('Left matchmaking', 'info');
+            updateUI();
+        }
+        
+        function createCustomGame() {
+            const opponentId = document.getElementById('opponentIdInput').value.trim();
+            if (!opponentId) {
+                log('Enter opponent ID first', 'error');
+                return;
+            }
+            sendMessage('pong.createCustomGame', { otherId: opponentId });
+        }
+        
+        function joinCustomGame() {
+            const gameId = document.getElementById('gameIdInput').value.trim();
+            if (!gameId) {
+                log('Enter game ID first', 'error');
+                return;
+            }
+            sendMessage('pong.joinCustomGame', { gameId });
+        }
+        
+        function setReady(ready) {
+            if (currentGameId) {
+                const event = ready ? 'pong.userReady' : 'pong.userNotReady';
+                sendMessage(event, { gameId: currentGameId });
+                log(ready ? 'Marked as ready' : 'Marked as not ready', 'info');
+            }
+        }
+        
+        function quitGame() {
+            if (currentGameId) {
+                sendMessage('pong.userQuit', { gameId: currentGameId });
+                log('Quitting game...', 'info');
+                currentGameId = null;
+                playerSide = null;
+                opponentUsername = null;
+                updateUI();
+            }
+        }
+        
+        // Event listeners for buttons
+        document.getElementById('gameModeSelect').addEventListener('change', updateUI);
+        document.getElementById('startOfflineBtn').addEventListener('click', startOfflineGame);
+        document.getElementById('stopOfflineBtn').addEventListener('click', stopOfflineGame);
+        document.getElementById('loginBtn').addEventListener('click', login);
+        document.getElementById('logoutBtn').addEventListener('click', logout);
+        document.getElementById('joinMatchmakingBtn').addEventListener('click', joinMatchmaking);
+        document.getElementById('leaveMatchmakingBtn').addEventListener('click', leaveMatchmaking);
+        document.getElementById('createCustomBtn').addEventListener('click', createCustomGame);
+        document.getElementById('joinCustomBtn').addEventListener('click', joinCustomGame);
+        document.getElementById('readyBtn').addEventListener('click', () => setReady(true));
+        document.getElementById('notReadyBtn').addEventListener('click', () => setReady(false));
+        document.getElementById('quitBtn').addEventListener('click', quitGame);
+        document.getElementById('clearLogBtn').addEventListener('click', clearLog);
+        
+        // Keyboard controls
+        let moveInterval = null;
+        
+        document.addEventListener('keydown', function(event) {
+            if (isOfflineGame) {
+                keys[event.key] = true;
+                event.preventDefault();
+            } else if (currentGameId && !moveInterval) {
+                let direction = null;
+                switch(event.key) {
+                    case 'ArrowUp':
+                    case 'w':
+                    case 'W':
+                        direction = 'up';
+                        break;
+                    case 'ArrowDown':
+                    case 's':
+                    case 'S':
+                        direction = 'down';
+                        break;
+                }
+                
+                if (direction) {
+                    event.preventDefault();
+                    sendMessage('pong.paddleMove', { gameId: currentGameId, direction });
+                    moveInterval = setInterval(() => {
+                        sendMessage('pong.paddleMove', { gameId: currentGameId, direction });
+                    }, 50);
+                }
+            }
+        });
+        
+        document.addEventListener('keyup', function(event) {
+            if (isOfflineGame) {
+                keys[event.key] = false;
+                event.preventDefault();
+            } else if (['ArrowUp', 'ArrowDown', 'w', 'W', 's', 'S'].includes(event.key)) {
+                event.preventDefault();
+                if (moveInterval) {
+                    clearInterval(moveInterval);
+                    moveInterval = null;
+                }
+            }
+        });
+        
+        // Initialize
+        updateUI();
+        
+        // Auto-login for testing
+        setTimeout(() => {
+            log('Auto-login enabled. Click Login button or wait...', 'info');
+        }, 500);
+    </script>
+</body>
+</html>

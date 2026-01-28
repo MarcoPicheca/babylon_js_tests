@@ -1,76 +1,40 @@
 
 import * as BABYLON from "@babylonjs/core";
 import * as GUI from "@babylonjs/gui";
+import { GameManager, GAME_MODES } from "./game/GameManager.js";
 
 const canvas = document.getElementById("firstCanvas");
 const engine = new BABYLON.Engine(canvas);
 
-let gameOver = false;
-let winner = "";
+/* =========================================================
+   GAME MODE SELECTION
+   Change this to switch between modes:
+   - GAME_MODES.LOCAL_MULTIPLAYER (2 players: W/S vs Arrow keys)
+   - GAME_MODES.LOCAL_VS_AI (Player vs AI)
+   - GAME_MODES.ONLINE (requires websocket)
+========================================================= */
+const CURRENT_MODE = GAME_MODES.LOCAL_VS_AI ; // Change this to test different modes
+
+// Initialize Game Manager
+const gameManager = new GameManager(CURRENT_MODE,
+{
+  maxScore: parseInt(import.meta.env.VITE_MAX_SCORE) || 5,
+  aiDifficulty: import.meta.env.VITE_AI_DEFAULT_DIFFICULTY || "medium",
+  playerNames: {
+    left: "You",
+    right: "AI"
+  }
+});
 
 /* =========================================================
-   PURE GAME LOGIC (NO BABYLON)
+   WORLD COORDINATE BOUNDS (for converting normalized to 3D)
 ========================================================= */
-
-function createBallState() {
-  return {
-    x: 0,
-    z: 0,
-    dirX: 0.15,
-    dirZ: 0.2,
-    speed: 2.0,
-    active: false,
-    radius: 1
-  };
-}
-
-function updateBall(ball, limitZ) {
-  if (!ball.active) return;
-
-  ball.x += ball.dirX * ball.speed;
-  ball.z += ball.dirZ * ball.speed;
-
-  // wall bounce Z
-  if (ball.z >= limitZ || ball.z <= -limitZ) {
-    ball.dirZ *= -1;
-  }
-
-  // TODO: test per valutare movimento
-    // console.log("BALL LOGIC:", ball.x, ball.z);
-}
-
-function checkPaddleCollision(ball, paddleX, paddleZ) {
-  const paddleHalfZ = 2.5;
-  const paddleHalfX = 1;
-
-  const collisionX =
-    Math.abs(ball.x - paddleX) <= ball.radius + paddleHalfX;
-
-  const collisionZ =
-    Math.abs(ball.z - paddleZ) <= ball.radius + paddleHalfZ;
-
-	// TODO: test collision pading
-    // console.log("paddle LOGIC:", paddleX, paddleZ, "ball LOGIC:", ball.x, ball.z);
-
-  return collisionX && collisionZ;
-}
-
-function bounceOnPaddle(ball, paddleZ) {
-  // invert X direction
-  ball.dirX *= -1;
-
-  // change Z direction depending on hit offset
-  const hitOffset = ball.z - paddleZ;
-  ball.dirZ = hitOffset * 0.05;
-}
-
-function resetBall(ball, dirX) {
-  ball.x = 0;
-  ball.z = 0;
-  ball.dirX = dirX;       // +0.15 or -0.15
-  ball.dirZ = 0.2;
-  ball.active = false;
-}
+const WORLD_BOUNDS = {
+  minX: -25,
+  maxX: 25,
+  minZ: -25,
+  maxZ: 25
+};
 
 /* =========================================================
    SCENE
@@ -133,7 +97,7 @@ function createScene() {
   ui.addControl(scoreText);
 
   const playerName1 = new GUI.TextBlock();
-  playerName1.text = "Player 1";
+  playerName1.text = gameManager.getGameState().playerNames.left;
   playerName1.color = "white";
   playerName1.fontFamily = "Liberation Sans";
   playerName1.fontSize = 48;
@@ -142,7 +106,7 @@ function createScene() {
   ui.addControl(playerName1);
 
   const playerName2 = new GUI.TextBlock();
-  playerName2.text = "Player 2";
+  playerName2.text = gameManager.getGameState().playerNames.right;
   playerName2.color = "white";
   playerName2.fontFamily = "Liberation Sans";
   playerName2.fontSize = 48;
@@ -212,20 +176,9 @@ function createScene() {
   );
   sphere.position.set(0, 4, 0);
 
-  const ballState = createBallState();
-
-  const ballLimitX = 24; // goal line X
-  const ballLimitZ = 24; // wall Z
-
   shadowGenerator.addShadowCaster(sphere);
   shadowGenerator.addShadowCaster(box);
   shadowGenerator.addShadowCaster(box2);
-
-  /* =======================
-     SCORE
-  ======================= */
-  let scorePlayer1 = 0; // left paddle (box2)
-  let scorePlayer2 = 0; // right paddle (box)
 
   /* =======================
      GROUND
@@ -252,147 +205,44 @@ function createScene() {
   camera.setTarget(groundHighMap.position);
 
   /* =======================
-     INPUT
+     GAME MANAGER CALLBACKS
   ======================= */
-  const inputMap = {};
-  scene.actionManager = new BABYLON.ActionManager(scene);
-
-  scene.actionManager.registerAction(
-    new BABYLON.ExecuteCodeAction(
-      BABYLON.ActionManager.OnKeyDownTrigger,
-      (evt) => (inputMap[evt.sourceEvent.key] = true)
-    )
-  );
-
-  scene.actionManager.registerAction(
-    new BABYLON.ExecuteCodeAction(
-      BABYLON.ActionManager.OnKeyUpTrigger,
-      (evt) => (inputMap[evt.sourceEvent.key] = false)
-    )
-  );
+  gameManager.setCallbacks({
+    onGoal: (scorer, scores) => {
+      scoreText.text = `${scores.left} : ${scores.right}`;
+    },
+    onGameOver: (winner) => {
+      const winnerName = winner === "left" 
+        ? gameManager.getGameState().playerNames.left 
+        : gameManager.getGameState().playerNames.right;
+      gameOverText.text = `${winnerName} HAS WON`;
+    }
+  });
 
   /* =======================
-     PLAYER MOVEMENT
-  ======================= */
-  let playerBoxZ = 0;
-  let playerBox2Z = 0;
-
-  const speed = 0.5;
-  const minZ = -25;
-  const maxZ = 25;
-
-  /* =======================
-     MAIN LOOP
+     MAIN LOOP - Now using GameManager
   ======================= */
   scene.onBeforeRenderObservable.add(() => {
-    if (gameOver) {
-      gameOverText.text = `${winner} HAS WON`;
-      return;
-    }
+    // Update game logic via GameManager
+    gameManager.update();
 
-    /* =======================
-       PLAYER 1 (ArrowUp/ArrowDown) -> right paddle (box)
-    ======================= */
-    if (inputMap["ArrowUp"]) {
-      if (!ballState.active) ballState.active = true;
-      playerBoxZ += speed;
-    }
-    if (inputMap["ArrowDown"]) {
-      if (!ballState.active) ballState.active = true;
-      playerBoxZ -= speed;
-    }
+    // Get world coordinates from normalized game state
+    const worldCoords = gameManager.getWorldCoordinates(
+      WORLD_BOUNDS.minX,
+      WORLD_BOUNDS.maxX,
+      WORLD_BOUNDS.minZ,
+      WORLD_BOUNDS.maxZ
+    );
 
-    playerBoxZ = BABYLON.Scalar.Clamp(playerBoxZ, minZ, maxZ);
-    box.position.z = playerBoxZ;
+    // Update visual representation
+    sphere.position.x = worldCoords.ball.x;
+    sphere.position.z = worldCoords.ball.z;
 
-    /* =======================
-       PLAYER 2 (W/S) -> left paddle (box2)
-    ======================= */
-    if (inputMap["w"] || inputMap["W"]) {
-      if (!ballState.active) ballState.active = true;
-      playerBox2Z += speed;
-    }
-    if (inputMap["s"] || inputMap["S"]) {
-      if (!ballState.active) ballState.active = true;
-      playerBox2Z -= speed;
-    }
+    box2.position.x = worldCoords.paddles.left.x;
+    box2.position.z = worldCoords.paddles.left.z;
 
-    playerBox2Z = BABYLON.Scalar.Clamp(playerBox2Z, minZ, maxZ);
-    box2.position.z = playerBox2Z;
-
-    /* =======================
-       BALL UPDATE (pure logic)
-    ======================= */
-    updateBall(ballState, ballLimitZ);
-
-    /* =======================
-       COLLISION (pure check)
-    ======================= */
-
-    // right paddle collision (box)
-    if (checkPaddleCollision(ballState, box.position.x, box.position.z) && ballState.dirX > 0) {
-      bounceOnPaddle(ballState, box.position.z);
-    }
-
-    // left paddle collision (box2)
-    if (checkPaddleCollision(ballState, box2.position.x, box2.position.z) && ballState.dirX < 0) {
-      bounceOnPaddle(ballState, box2.position.z);
-    }
-
-    /* =======================
-       GOAL CHECK
-    ======================= */
-    if (ballState.x > ballLimitX) {
-      // Player 1 scores
-      scorePlayer1++;
-      scoreText.text = `${scorePlayer1} : ${scorePlayer2}`;
-
-      // reset ball towards left
-      resetBall(ballState, -0.15);
-
-      // optional: increase difficulty
-      ballState.speed += 0.05;
-
-      // reset paddles
-      playerBoxZ = 0;
-      playerBox2Z = 0;
-      box.position.set(25, 4, 0);
-      box2.position.set(-25, 4, 0);
-
-      if (scorePlayer1 === 5) {
-        winner = playerName1.text;
-        gameOver = true;
-      }
-    }
-
-    if (ballState.x < -ballLimitX) {
-      // Player 2 scores
-      scorePlayer2++;
-      scoreText.text = `${scorePlayer1} : ${scorePlayer2}`;
-
-      // reset ball towards right
-      resetBall(ballState, 0.15);
-
-      // optional: increase difficulty
-      ballState.speed += 0.05;
-
-      // reset paddles
-      playerBoxZ = 0;
-      playerBox2Z = 0;
-      box.position.set(25, 4, 0);
-      box2.position.set(-25, 4, 0);
-
-      if (scorePlayer2 === 5) {
-        winner = playerName2.text;
-        gameOver = true;
-      }
-    }
-
-    /* =======================
-       SYNC BALL STATE -> BABYLON MESH
-    ======================= */
-    sphere.position.x = ballState.x;
-    sphere.position.z = ballState.z;
+    box.position.x = worldCoords.paddles.right.x;
+    box.position.z = worldCoords.paddles.right.z;
   });
 
   return scene;
