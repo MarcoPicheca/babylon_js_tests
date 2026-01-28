@@ -3,3 +3,11 @@
     - scene.addCameras che è praticamente una lista di oggetti
         quindi esegui un push che è un push_back
     - poi le scambi con activeCamera
+
+REMOVE FPS CAMERA
+
+FUNZIONE PER MODIFICARE X, Z PALLINA NEL RETTANGOLO DI GIOCO
+
+LISTA COSE DA FARE PER IL GDPR
+
+METTERE LINEE SUL CAMPO E RENDERLO FIGO
