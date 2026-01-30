@@ -3,401 +3,279 @@ import * as BABYLON from "@babylonjs/core";
 import * as GUI from "@babylonjs/gui";
 import { GameManager, GAME_MODES } from "./game/GameManager.js";
 
-const canvas = document.getElementById("firstCanvas");
-const engine = new BABYLON.Engine(canvas);
+/**
+ * World coordinate bounds for converting normalized to 3D
+ */
+const fieldWidthEnv = parseInt(import.meta.env.VITE_FIELD_WIDTH) || 50;
+const fieldHeightEnv = parseInt(import.meta.env.VITE_FIELD_HEIGHT) || 50;
 
-/* =========================================================
-   GAME MODE SELECTION
-   Change this to switch between modes:
-   - GAME_MODES.LOCAL_MULTIPLAYER (2 players: W/S vs Arrow keys)
-   - GAME_MODES.LOCAL_VS_AI (Player vs AI)
-   - GAME_MODES.ONLINE (requires websocket)
-========================================================= */
-const CURRENT_MODE = GAME_MODES.LOCAL_VS_AI ; // Change this to test different modes
-
-// Initialize Game Manager
-const gameManager = new GameManager(CURRENT_MODE,
-{
-  maxScore: parseInt(import.meta.env.VITE_MAX_SCORE) || 5,
-  aiDifficulty: import.meta.env.VITE_AI_DEFAULT_DIFFICULTY || "medium",
-  playerNames: {
-    left: "You",
-    right: "AI"
-  }
-});
-
-/* =========================================================
-   WORLD COORDINATE BOUNDS (for converting normalized to 3D)
-========================================================= */
-const WORLD_BOUNDS = {
-  minX: -25,
-  maxX: 25,
-  minZ: -25,
-  maxZ: 25
+export const WORLD_BOUNDS = {
+  minX: -fieldWidthEnv / 2,
+  maxX: fieldWidthEnv / 2,
+  minZ: -fieldHeightEnv / 2,
+  maxZ: fieldHeightEnv / 2
 };
 
-/* =========================================================
-   SCENE
-========================================================= */
-
-function createScene() {
-  const scene = new BABYLON.Scene(engine);
-
-  scene.clearColor = new BABYLON.Color3(0.6, 0.5, 0);
-
-  /* =======================
-     CAMERA
-  ======================= */
-  const camera = new BABYLON.UniversalCamera(
-    "camera",
-    new BABYLON.Vector3(0, 50, -55),
-    scene
-  );
-
-  camera.inputs.clear();
-  camera.attachControl(canvas, true);
-  scene.activeCamera = camera;
-
-  /* =======================
-     LIGHT
-  ======================= */
-  const light = new BABYLON.HemisphericLight(
-    "light",
-    new BABYLON.Vector3(60, 100, 20),
-    scene
-  );
-  light.intensity = 0.5;
-
-  /* =======================
-     SHADOW LIGHT
-  ======================= */
-  const shadowLight = new BABYLON.DirectionalLight(
-    "shadowLight",
-    new BABYLON.Vector3(-1, -2, -1),
-    scene
-  );
-
-  shadowLight.position = new BABYLON.Vector3(0, 40, 0);
-
-  const shadowGenerator = new BABYLON.ShadowGenerator(1024, shadowLight);
-  shadowGenerator.useBlurExponentialShadowMap = true;
-  shadowGenerator.blurKernel = 32;
-
-  /* =======================
-     UI
-  ======================= */
-  const ui = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
-
-  const scoreText = new GUI.TextBlock();
-  scoreText.text = "0 : 0";
-  scoreText.color = "white";
-  scoreText.fontSize = 48;
-  scoreText.fontFamily = "Liberation Sans";
-  scoreText.top = "-40%";
-  ui.addControl(scoreText);
-
-  const playerName1 = new GUI.TextBlock();
-  playerName1.text = gameManager.getGameState().playerNames.left;
-  playerName1.color = "white";
-  playerName1.fontFamily = "Liberation Sans";
-  playerName1.fontSize = 48;
-  playerName1.top = "-40%";
-  playerName1.left = "-40%";
-  ui.addControl(playerName1);
-
-  const playerName2 = new GUI.TextBlock();
-  playerName2.text = gameManager.getGameState().playerNames.right;
-  playerName2.color = "white";
-  playerName2.fontFamily = "Liberation Sans";
-  playerName2.fontSize = 48;
-  playerName2.top = "-40%";
-  playerName2.left = "40%";
-  ui.addControl(playerName2);
-
-  const gameOverText = new GUI.TextBlock();
-  gameOverText.text = "";
-  gameOverText.color = "red";
-  gameOverText.top = "-35%";
-  gameOverText.fontSize = 48;
-  gameOverText.fontFamily = "Liberation Sans";
-  ui.addControl(gameOverText);
-
-  /* =======================
-     PADDLES (Babylon meshes)
-  ======================= */
-
-  // right paddle (Player 2)
-  const box = BABYLON.MeshBuilder.CreateBox(
-    "box1",
-    {
-      height: 1,
-      width: 2,
-      depth: 5,
-      faceColors: [
-        new BABYLON.Color4(1, 0, 0, 1),
-        new BABYLON.Color4(1, 0, 0, 1),
-        new BABYLON.Color4(1, 0, 0, 1),
-        new BABYLON.Color4(1, 0, 0, 1),
-        new BABYLON.Color4(1, 0, 0, 1),
-        new BABYLON.Color4(1, 0, 0, 1)
-      ]
-    },
-    scene
-  );
-  box.position.set(25, 4, 0);
-
-  // left paddle (Player 1)
-  const box2 = BABYLON.MeshBuilder.CreateBox(
-    "box2",
-    {
-      height: 1,
-      width: 2,
-      depth: 5,
-      faceColors: [
-        new BABYLON.Color4(0, 0, 1, 1),
-        new BABYLON.Color4(0, 0, 1, 1),
-        new BABYLON.Color4(0, 0, 1, 1),
-        new BABYLON.Color4(0, 0, 1, 1),
-        new BABYLON.Color4(0, 0, 1, 1),
-        new BABYLON.Color4(0, 0, 1, 1)
-      ]
-    },
-    scene
-  );
-  box2.position.set(-25, 4, 0);
-
-  /* =======================
-     BALL (mesh + pure state)
-  ======================= */
-  const sphere = BABYLON.MeshBuilder.CreateSphere(
-    "sphere",
-    { diameter: 2, segments: 32 },
-    scene
-  );
-  sphere.position.set(0, 4, 0);
-
-  shadowGenerator.addShadowCaster(sphere);
-  shadowGenerator.addShadowCaster(box);
-  shadowGenerator.addShadowCaster(box2);
-
-  /* =======================
-     GROUND
-  ======================= */
-  const groundHighMap = new BABYLON.MeshBuilder.CreateGroundFromHeightMap(
-    "heighMapGround",
-    "/public/topoGraphicMap.png",
-    {
-      height: 60,
-      depth: 50,
-      width: 80
-    },
-    scene
-  );
-
-  groundHighMap.position.y = -1;
-  groundHighMap.receiveShadows = true;
-
-  const groundMaterial = new BABYLON.StandardMaterial("groundMat", scene);
-  groundMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.6, 0.2);
-  groundMaterial.specularColor = BABYLON.Color3.Black();
-  groundHighMap.material = groundMaterial;
-
-  camera.setTarget(groundHighMap.position);
-
-  /* =======================
-     GAME MANAGER CALLBACKS
-  ======================= */
-  gameManager.setCallbacks({
-    onGoal: (scorer, scores) => {
-      scoreText.text = `${scores.left} : ${scores.right}`;
-    },
-    onGameOver: (winner) => {
-      const winnerName = winner === "left" 
-        ? gameManager.getGameState().playerNames.left 
-        : gameManager.getGameState().playerNames.right;
-      gameOverText.text = `${winnerName} HAS WON`;
+export class PongGame {
+  constructor(canvasId, mode = GAME_MODES.LOCAL_VS_AI, config = {}) {
+    this.canvas = document.getElementById(canvasId);
+    if (!this.canvas) {
+      throw new Error(`Canvas with id ${canvasId} not found`);
     }
-  });
 
-  /* =======================
-     MAIN LOOP - Now using GameManager
-  ======================= */
-  scene.onBeforeRenderObservable.add(() => {
-    // Update game logic via GameManager
-    gameManager.update();
+    this.engine = new BABYLON.Engine(this.canvas, true);
+    this.gameManager = new GameManager(mode, config);
+    this.scene = this.createScene();
+    
+    this.setupRenderLoop();
+    this.setupResize();
+  }
 
-    // Get world coordinates from normalized game state
-    const worldCoords = gameManager.getWorldCoordinates(
-      WORLD_BOUNDS.minX,
-      WORLD_BOUNDS.maxX,
-      WORLD_BOUNDS.minZ,
-      WORLD_BOUNDS.maxZ
+  createScene() {
+    const scene = new BABYLON.Scene(this.engine);
+    scene.clearColor = new BABYLON.Color3(0.6, 0.5, 0);
+
+    /* =======================
+       CAMERA
+    ======================= */
+    const camera = new BABYLON.UniversalCamera(
+      "camera",
+      new BABYLON.Vector3(0, 100, -40),
+      scene
     );
+    camera.inputs.clear();
+    camera.attachControl(this.canvas, true);
+    scene.activeCamera = camera;
 
-    // Update visual representation
-    sphere.position.x = worldCoords.ball.x;
-    sphere.position.z = worldCoords.ball.z;
+    /* =======================
+       LIGHT
+    ======================= */
+    const light = new BABYLON.HemisphericLight(
+      "light",
+      new BABYLON.Vector3(60, 100, 20),
+      scene
+    );
+    light.intensity = 0.5;
 
-    box2.position.x = worldCoords.paddles.left.x;
-    box2.position.z = worldCoords.paddles.left.z;
+    /* =======================
+       SHADOW LIGHT
+    ======================= */
+    const shadowLight = new BABYLON.DirectionalLight(
+      "shadowLight",
+      new BABYLON.Vector3(-1, -2, -1),
+      scene
+    );
+    shadowLight.position = new BABYLON.Vector3(0, 40, 0);
 
-    box.position.x = worldCoords.paddles.right.x;
-    box.position.z = worldCoords.paddles.right.z;
-  });
+    const shadowGenerator = new BABYLON.ShadowGenerator(1024, shadowLight);
+    shadowGenerator.useBlurExponentialShadowMap = true;
+    shadowGenerator.blurKernel = 32;
 
-  return scene;
+    /* =======================
+       UI
+    ======================= */
+    const ui = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI", true, scene);
+
+    this.scoreText = new GUI.TextBlock();
+    this.scoreText.text = "0 : 0";
+    this.scoreText.color = "white";
+    this.scoreText.fontSize = 48;
+    this.scoreText.fontFamily = "Liberation Sans";
+    this.scoreText.top = "-40%";
+    ui.addControl(this.scoreText);
+
+    this.playerNameLeft = new GUI.TextBlock();
+    this.playerNameLeft.text = this.gameManager.getGameState().playerNames.left;
+    this.playerNameLeft.color = "white";
+    this.playerNameLeft.fontFamily = "Liberation Sans";
+    this.playerNameLeft.fontSize = 48;
+    this.playerNameLeft.top = "-40%";
+    this.playerNameLeft.left = "-40%";
+    ui.addControl(this.playerNameLeft);
+
+    this.playerNameRight = new GUI.TextBlock();
+    this.playerNameRight.text = this.gameManager.getGameState().playerNames.right;
+    this.playerNameRight.color = "white";
+    this.playerNameRight.fontFamily = "Liberation Sans";
+    this.playerNameRight.fontSize = 48;
+    this.playerNameRight.top = "-40%";
+    this.playerNameRight.left = "40%";
+    ui.addControl(this.playerNameRight);
+
+    this.gameOverText = new GUI.TextBlock();
+    this.gameOverText.text = "";
+    this.gameOverText.color = "red";
+    this.gameOverText.top = "-35%";
+    this.gameOverText.fontSize = 48;
+    this.gameOverText.fontFamily = "Liberation Sans";
+    ui.addControl(this.gameOverText);
+
+    /* =======================
+       PADDLES (Babylon meshes)
+    ======================= */
+    const gameState = this.gameManager.getGameState();
+    const worldHeight = WORLD_BOUNDS.maxZ - WORLD_BOUNDS.minZ;
+    const paddleVisualDepth = gameState.paddles.left.height * worldHeight;
+    const ballVisualDiameter = gameState.ball.radius * worldHeight * 2;
+
+    this.rightPaddleMesh = BABYLON.MeshBuilder.CreateBox("rightPaddle", {
+      height: 1, width: 1.5, depth: paddleVisualDepth,
+      faceColors: Array(6).fill(new BABYLON.Color4(1, 0, 0, 1))
+    }, scene);
+    this.rightPaddleMesh.position.set(WORLD_BOUNDS.maxX, 4, 0);
+
+    this.leftPaddleMesh = BABYLON.MeshBuilder.CreateBox("leftPaddle", {
+      height: 1, width: 1.5, depth: paddleVisualDepth,
+      faceColors: Array(6).fill(new BABYLON.Color4(0, 0, 1, 1))
+    }, scene);
+    this.leftPaddleMesh.position.set(WORLD_BOUNDS.minX, 4, 0);
+
+    /* =======================
+       BALL
+    ======================= */
+    this.ballMesh = BABYLON.MeshBuilder.CreateSphere("ball", { diameter: ballVisualDiameter, segments: 32 }, scene);
+    this.ballMesh.position.set(0, 4, 0);
+
+    shadowGenerator.addShadowCaster(this.ballMesh);
+    shadowGenerator.addShadowCaster(this.rightPaddleMesh);
+    shadowGenerator.addShadowCaster(this.leftPaddleMesh);
+
+    /* =======================
+       GROUND
+    ======================= */
+    const fieldWidth = WORLD_BOUNDS.maxX - WORLD_BOUNDS.minX;
+    const fieldDepth = WORLD_BOUNDS.maxZ - WORLD_BOUNDS.minZ;
+    
+    // Create ground slightly larger than the field
+    const ground = BABYLON.MeshBuilder.CreateGround("ground", { 
+      width: fieldWidth * 1.2, 
+      height: fieldDepth * 1.2 
+    }, scene);
+    ground.position.y = -1;
+    ground.receiveShadows = true;
+
+    const groundMaterial = new BABYLON.StandardMaterial("groundMat", scene);
+    groundMaterial.diffuseColor = new BABYLON.Color3(0.2, 0.6, 0.2);
+    groundMaterial.specularColor = BABYLON.Color3.Black();
+    ground.material = groundMaterial;
+
+    /* =======================
+       FIELD MARKINGS
+    ======================= */
+    const markMaterial = new BABYLON.StandardMaterial("markMat", scene);
+    markMaterial.diffuseColor = new BABYLON.Color3(1, 1, 1);
+    markMaterial.specularColor = BABYLON.Color3.Black();
+
+    const lineThickness = 0.4;
+    const markY = -0.95; // Slightly above ground level
+
+    // Horizontal boundaries (Top & Bottom)
+    const topBoundary = BABYLON.MeshBuilder.CreateBox("topBoundary", { width: fieldWidth + lineThickness, height: 0.1, depth: lineThickness }, scene);
+    topBoundary.position.set(0, markY, WORLD_BOUNDS.maxZ);
+    topBoundary.material = markMaterial;
+
+    const bottomBoundary = BABYLON.MeshBuilder.CreateBox("bottomBoundary", { width: fieldWidth + lineThickness, height: 0.1, depth: lineThickness }, scene);
+    bottomBoundary.position.set(0, markY, WORLD_BOUNDS.minZ);
+    bottomBoundary.material = markMaterial;
+
+    // Goal lines (Left & Right)
+    const leftBoundary = BABYLON.MeshBuilder.CreateBox("leftBoundary", { width: lineThickness, height: 0.1, depth: fieldDepth + lineThickness }, scene);
+    leftBoundary.position.set(WORLD_BOUNDS.minX, markY, 0);
+    leftBoundary.material = markMaterial;
+
+    const rightBoundary = BABYLON.MeshBuilder.CreateBox("rightBoundary", { width: lineThickness, height: 0.1, depth: fieldDepth + lineThickness }, scene);
+    rightBoundary.position.set(WORLD_BOUNDS.maxX, markY, 0);
+    rightBoundary.material = markMaterial;
+
+    // Center divider
+    const centerLine = BABYLON.MeshBuilder.CreateBox("centerLine", { width: lineThickness, height: 0.1, depth: fieldDepth }, scene);
+    centerLine.position.set(0, markY, 0);
+    centerLine.material = markMaterial;
+
+    camera.setTarget(ground.position);
+
+    /* =======================
+       GAME MANAGER CALLBACKS
+    ======================= */
+    this.gameManager.setCallbacks({
+      onGoal: (scorer, scores) => {
+        this.scoreText.text = `${scores.left} : ${scores.right}`;
+      },
+      onGameOver: (winner) => {
+        const winnerName = winner === "left" 
+          ? this.gameManager.getGameState().playerNames.left 
+          : this.gameManager.getGameState().playerNames.right;
+        this.gameOverText.text = `${winnerName} HAS WON`;
+      }
+    });
+
+    return scene;
+  }
+
+  setupRenderLoop() {
+    this.engine.runRenderLoop(() => {
+      // Update game logic via GameManager
+      this.gameManager.update();
+
+      // Get world coordinates from normalized game state
+      const worldCoords = this.gameManager.getWorldCoordinates(
+        WORLD_BOUNDS.minX,
+        WORLD_BOUNDS.maxX,
+        WORLD_BOUNDS.minZ,
+        WORLD_BOUNDS.maxZ
+      );
+
+      // Update visual representation
+      this.ballMesh.position.x = worldCoords.ball.x;
+      this.ballMesh.position.z = worldCoords.ball.z;
+
+      this.leftPaddleMesh.position.z = worldCoords.paddles.left.z;
+      this.rightPaddleMesh.position.z = worldCoords.paddles.right.z;
+
+      this.scene.render();
+    });
+  }
+
+  setupResize() {
+    window.addEventListener("resize", () => {
+      this.engine.resize();
+    });
+  }
+
+  // --- External API ---
+
+  updatePlayerNames(left, right) {
+    this.gameManager.gameState.playerNames = { left, right };
+    this.playerNameLeft.text = left;
+    this.playerNameRight.text = right;
+  }
+
+  updateOnlineState(serverState) {
+    if (this.gameManager.mode !== GAME_MODES.ONLINE) return;
+    
+    // Pass server state to network controller if it exists
+    if (this.gameManager.networkController) {
+      this.gameManager.networkController.setServerGameState(serverState);
+    }
+  }
+
+  changeMode(mode, config = {}) {
+    this.gameManager.changeMode(mode, config);
+    this.playerNameLeft.text = this.gameManager.getGameState().playerNames.left;
+    this.playerNameRight.text = this.gameManager.getGameState().playerNames.right;
+    this.scoreText.text = "0 : 0";
+    this.gameOverText.text = "";
+  }
+
+  destroy() {
+    this.gameManager.destroy();
+    this.engine.dispose();
+  }
 }
 
-/* =========================================================
-   RUN
-========================================================= */
+// Map between HTML modes and GameManager modes
+export { GAME_MODES };
 
-const scenario = createScene();
-
-engine.runRenderLoop(() => {
-  scenario.render();
-});
-
-window.addEventListener("resize", () => {
-  engine.resize();
-});
-
-
-// OLD VERSION PEER CONFRONTO
-
-
-// /**
-//  * 
-//  * to display a 3D element abbiamo bisogno di 4 
-//  * pezzi fondamentali:
-//  * - CANVAS ELEMENT: un elemento html <canvas></canvas>
-//  * - ENGIN: CreateBox() crea l'oggetto interattivo
-//  * - SCENE: crea lo spazio in cui si sviluppano le coordinate
-//  *          per la logica 3D (x, y, z)
-//  * - CAMERA: da dove viene visto parte della scena
-//  *
-//  */
-
-// // TODO
-// /**
-//  * vite non aggiunge automaticamente i pacchetti anche
-//  * se l'importi per cui prima devi fare ad es.
-//  * npm install @babylonjs/gui
-//  * perchè vite scarica automaticamente solo il core
-//  * di babylon
-// */
-// import * as BABYLON from '@babylonjs/core'
-// import * as GUI from '@babylonjs/gui';
-
-
-// const canvas = document.getElementById('firstCanvas');
-
-// const engine = new BABYLON.Engine(canvas);
-// let gameOver = false;
-// let winner = "";
-
-// function createScene() {
-
-// 	const scene = new BABYLON.Scene(engine);
-
-// 	/* =======================
-// 	   BACKGROUND COLOR
-// 	======================= */
-// 	scene.clearColor = new BABYLON.Color3(0.6, 0.5, 0);
-
-// 	/* =======================
-// 	   CAMERA
-// 	======================= */
-
-// 	const camera = new BABYLON.UniversalCamera(
-// 		"camera",
-// 		new BABYLON.Vector3(0, 50, -55),
-// 		scene
-// 	);
-
-// 	camera.inputs.clear();
-// 	camera.attachControl(canvas, true);
-// 	scene.activeCamera = camera;
-
-// 	/* =======================
-// 	   LUCE
-// 	======================= */
-// 	const light = new BABYLON.HemisphericLight(
-// 		"light",
-// 		new BABYLON.Vector3(60, 100, 20),
-// 		scene
-// 	);
-// 	light.intensity = 0.5;
-
-// 	/* =======================
-// 	SHADOW LIGHT
-// 	======================= */
-
-// 	// TODO 
-// 	const shadowLight = new BABYLON.DirectionalLight(
-// 		"shadowLight",
-// 		new BABYLON.Vector3(-1, -2, -1),
-// 		scene
-// 	);
-
-// 	shadowLight.position = new BABYLON.Vector3(0, 40, 0);
-// 	const shadowGenerator = new BABYLON.ShadowGenerator(1024, shadowLight);
-// 	shadowGenerator.useBlurExponentialShadowMap = true;
-// 	shadowGenerator.blurKernel = 32;
-
-// 	/* =======================
-// 	SCOREBOARD AND NAMES UI
-// 	======================= */
-
-// 	const ui = GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
-
-// 	const scoreText = new GUI.TextBlock();
-// 	scoreText.text = "0 : 0";
-// 	scoreText.color = "white";
-// 	scoreText.fontSize = 48;
-// 	scoreText.fontFamily = "Liberation Sans";
-// 	scoreText.top = "-40%";
-
-// 	// names
-// 	const playerName1 = new GUI.TextBlock();
-// 	playerName1.text = "name player 1";
-// 	playerName1.color = "white";
-// 	playerName1.fontFamily = "Liberation Sans";
-// 	playerName1.fontSize = 48;
-// 	playerName1.top = "-40%";
-// 	playerName1.left = "-40%";
-// 	ui.addControl(playerName1);
-
-// 	const playerName2 = new GUI.TextBlock();
-// 	playerName2.text = "name player 2";
-// 	playerName2.color = "white";
-// 	playerName2.fontFamily = "Liberation Sans";
-// 	playerName2.fontSize = 48;
-// 	playerName2.top = "-40%";
-// 	playerName2.left = "40%";
-// 	ui.addControl(playerName2);
-
-
-// 	ui.addControl(scoreText);
-
-// 	/* =======================
-// 	   BOX player 2
-// 	======================= */
-// 	const box = BABYLON.MeshBuilder.CreateBox("box1",
-// 		{
-// 			height: 1,
-// 			width: 2,
-// 			depth: 5,
-// 			faceColors: [
-// 				new BABYLON.Color4(1, 0, 0, 1),
-// 				new BABYLON.Color4(1, 0, 0, 1),
-// 				new BABYLON.Color4(1, 0, 0, 1),
-// 				new BABYLON.Color4(1, 0, 0, 1),
-// 				new BABYLON.Color4(1, 0, 0, 1),
-// 				new BABYLON.Color4(1, 0, 0, 1)
-// 			]
-// 		},
-// 		scene);
 // 	box.position.set(25, 4, 0);
 
 // 	/* =======================

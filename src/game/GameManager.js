@@ -21,7 +21,9 @@ export class GameManager
 		this.mode = mode;
 		this.config =
 		{
-			maxScore: config.maxScore || 5,
+			maxScore: config.maxScore || parseInt(import.meta.env.VITE_MAX_SCORE) || 5,
+			aiDifficulty: config.aiDifficulty || import.meta.env.VITE_AI_DEFAULT_DIFFICULTY || "medium",
+			cooldownTime: config.cooldownTime || parseInt(import.meta.env.VITE_COOLDOWN_BETWEEN_POINTS_MS) || 3000,
 			websocket: config.websocket || null,
 			playerNames: config.playerNames || { left: "Player 1", right: "Player 2" },
 			...config,
@@ -33,6 +35,8 @@ export class GameManager
 		this.gameState.maxScore = this.config.maxScore;
 		this.gameState.gameOver = false;
 		this.gameState.winner = null;
+		this.gameState.isCooldown = false;
+		this.gameState.cooldownTimer = 0;
 
 		// Input controllers
 		this.leftInputController = null;
@@ -63,10 +67,11 @@ export class GameManager
 			// Player controls left paddle, AI controls right
 			this.leftInputController = new LocalInputController("ArrowUp", "ArrowDown");
 			this.rightInputController = new AIController(
-			this.gameState,
-			"right",
-				);
-				break;
+				this.gameState,
+				"right",
+				this.config.aiDifficulty
+			);
+			break;
 
 			case GAME_MODES.ONLINE:
 				// Local player and network opponent
@@ -99,6 +104,18 @@ export class GameManager
 		if (this.gameState.gameOver)
 			return;
 
+		// Handle cooldown between points
+		if (this.gameState.isCooldown) {
+			// Convert ms to roughly frames (assuming 60fps if deltaTime=1)
+			// deltaTime is usually constant in this simple implementation
+			this.gameState.cooldownTimer -= deltaTime * (1000 / 60); 
+			if (this.gameState.cooldownTimer <= 0) {
+				this.gameState.isCooldown = false;
+				this.gameState.ball.active = true;
+			}
+			return;
+		}
+
 		// Get input from both controllers
 		const leftMovement = this.leftInputController?.getMovement();
 		const rightMovement = this.rightInputController?.getMovement();
@@ -115,32 +132,37 @@ export class GameManager
 			if (serverState)
 			{
 				// Server sends complete state - replace (not merge) to avoid stale data
-				if (serverState.ball)
-					this.gameState.ball = { ...serverState.ball };
+				if (serverState.ball) {
+					this.gameState.ball.x = serverState.ball.x;
+					this.gameState.ball.y = serverState.ball.y;
+				}
 				
-				// Map server paddle keys (player IDs) to client keys (left/right)
+				// Map server paddles to client paddles based on X position
 				if (serverState.paddles)
 				{
-					const serverPaddleKeys = Object.keys(serverState.paddles);
-					const leftPaddleKey = serverPaddleKeys[0];
-					const rightPaddleKey = serverPaddleKeys[1];
-					
-					if (serverState.paddles[leftPaddleKey])
-						this.gameState.paddles.left = { ...this.gameState.paddles.left, ...serverState.paddles[leftPaddleKey] };
-					
-					if (serverState.paddles[rightPaddleKey])
-						this.gameState.paddles.right = { ...this.gameState.paddles.right, ...serverState.paddles[rightPaddleKey] };
+					for (const paddle of Object.values(serverState.paddles)) {
+						if (paddle.x === 0 || paddle.x < 0.5) {
+							this.gameState.paddles.left.y = paddle.y;
+						} else {
+							this.gameState.paddles.right.y = paddle.y;
+						}
+					}
 				}
 				
 				// Update scores
 				if (serverState.scores)
 				{
-					const scoreKeys = Object.keys(serverState.scores);
-					if (scoreKeys.length >= 2)
-					{
-						this.gameState.scores.left = serverState.scores[scoreKeys[0]] || 0;
-						this.gameState.scores.right = serverState.scores[scoreKeys[1]] || 0;
-					}
+					const scoreValues = Object.values(serverState.scores);
+					// This assumes the first score corresponds to the left paddle's owner
+					// A better way would be to map via player IDs, but this matches the server's state format
+					// In the tester, we might need more precision
+					
+					// Let's try to find which score belongs to whom if possible, 
+					// or just use the order provided by server if it's consistent.
+					// pong-game-test.html uses leftPlayerId and rightPlayerId caches.
+					
+					// For now, let's just use the fact that serverState.scores is an object {id: score}
+					// If we have player side info, we can do better.
 				}
 			}
 			
@@ -195,6 +217,19 @@ export class GameManager
 	}
 
 	/**
+	 * Set scores manually (e.g. from server)
+	 * @param {number} left - Left score
+	 * @param {number} right - Right score
+	 */
+	setScores(left, right)
+	{
+		this.gameState.scores.left = left;
+		this.gameState.scores.right = right;
+		if (this.onGoal)
+			this.onGoal(null, this.gameState.scores);
+	}
+
+	/**
 	 * Handle goal scoring
 	 * @param {string} scorer - 'left' or 'right'
 	 */
@@ -206,13 +241,24 @@ export class GameManager
 		// Reset ball towards the player who got scored on
 		const ballDirection = scorer === "left" ? 1 : -1;
 		Physics.resetBall(this.gameState.ball, ballDirection);
+		this.gameState.ball.active = false; // Stop ball for cooldown
+
+		// Reset paddles to center
+		this.gameState.paddles.left.y = 0.5 - this.gameState.paddles.left.height / 2;
+		this.gameState.paddles.right.y = 0.5 - this.gameState.paddles.right.height / 2;
 
 		// Check for game over
-		if (this.gameState.scores[scorer] >= this.gameState.maxScore)
+		if (this.gameState.scores[scorer] >= this.config.maxScore)
 		{
 			this.gameState.gameOver = true;
 			this.gameState.winner = scorer;
 			this.onGameOver(scorer);
+		}
+		else 
+		{
+			// Start cooldown
+			this.gameState.isCooldown = true;
+			this.gameState.cooldownTimer = this.config.cooldownTime;
 		}
 
 		// Callback for goal event

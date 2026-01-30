@@ -261,6 +261,15 @@ export class NetworkInputController extends InputController
 	}
 
 	/**
+	 * Set server-authoritative game state (called externally)
+	 * @param {object} state - Server game state
+	 */
+	setServerGameState(state)
+	{
+		this.serverGameState = state;
+	}
+
+	/**
 	 * Get server-authoritative game state (if available)
 	 * Consumes the state (clears it after reading) to prevent re-applying old data
 	 * @returns {object|null} Server game state
