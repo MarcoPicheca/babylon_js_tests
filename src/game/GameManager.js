@@ -38,6 +38,14 @@ export class GameManager
 		this.gameState.isCooldown = false;
 		this.gameState.cooldownTimer = 0;
 
+		// For interpolation in online mode
+		this.targetBall = { x: this.gameState.ball.x, y: this.gameState.ball.y };
+		this.targetPaddles = {
+			left: { y: this.gameState.paddles.left.y },
+			right: { y: this.gameState.paddles.right.y }
+		};
+		this.interpolationSpeed = 0.2; // Adjust for smoothness
+
 		// Input controllers
 		this.leftInputController = null;
 		this.rightInputController = null;
@@ -65,7 +73,7 @@ export class GameManager
 
 			case GAME_MODES.LOCAL_VS_AI:
 			// Player controls left paddle, AI controls right
-			this.leftInputController = new LocalInputController("ArrowUp", "ArrowDown");
+			this.leftInputController = new LocalInputController(["ArrowUp", "w"], ["ArrowDown", "s"]);
 			this.rightInputController = new AIController(
 				this.gameState,
 				"right",
@@ -131,10 +139,10 @@ export class GameManager
 			const serverState = this.networkController.getServerGameState();
 			if (serverState)
 			{
-				// Server sends complete state - replace (not merge) to avoid stale data
+				// Set targets for interpolation
 				if (serverState.ball) {
-					this.gameState.ball.x = serverState.ball.x;
-					this.gameState.ball.y = serverState.ball.y;
+					this.targetBall.x = serverState.ball.x;
+					this.targetBall.y = serverState.ball.y;
 				}
 				
 				// Map server paddles to client paddles based on X position
@@ -142,9 +150,9 @@ export class GameManager
 				{
 					for (const paddle of Object.values(serverState.paddles)) {
 						if (paddle.x === 0 || paddle.x < 0.5) {
-							this.gameState.paddles.left.y = paddle.y;
+							this.targetPaddles.left.y = paddle.y;
 						} else {
-							this.gameState.paddles.right.y = paddle.y;
+							this.targetPaddles.right.y = paddle.y;
 						}
 					}
 				}
@@ -165,6 +173,9 @@ export class GameManager
 					// If we have player side info, we can do better.
 				}
 			}
+			
+			// Interpolate positions for smooth movement
+			this.interpolatePositions(deltaTime);
 			
 			// 3. EXIT - Do not run local physics simulation
 			return;
@@ -366,6 +377,23 @@ getWorldCoordinates(minX, maxX, minZ, maxZ)
 		this.config = { ...this.config, ...newConfig };
 		this.reset();
 		this.initializeMode();
+	}
+
+	/**
+	 * Interpolate positions towards targets for smooth movement in online mode
+	 * @param {number} deltaTime
+	 */
+	interpolatePositions(deltaTime)
+	{
+		const lerp = (current, target, speed) => current + (target - current) * speed * deltaTime;
+
+		// Interpolate ball
+		this.gameState.ball.x = lerp(this.gameState.ball.x, this.targetBall.x, this.interpolationSpeed);
+		this.gameState.ball.y = lerp(this.gameState.ball.y, this.targetBall.y, this.interpolationSpeed);
+
+		// Interpolate paddles
+		this.gameState.paddles.left.y = lerp(this.gameState.paddles.left.y, this.targetPaddles.left.y, this.interpolationSpeed);
+		this.gameState.paddles.right.y = lerp(this.gameState.paddles.right.y, this.targetPaddles.right.y, this.interpolationSpeed);
 	}
 
 	/**

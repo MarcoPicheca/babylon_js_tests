@@ -19,11 +19,11 @@ class InputController
  */
 export class LocalInputController extends InputController
 {
-	constructor(upKey, downKey)
+	constructor(upKeys, downKeys)
 	{
 		super();
-		this.upKey = upKey;
-		this.downKey = downKey;
+		this.upKeys = Array.isArray(upKeys) ? upKeys : [upKeys];
+		this.downKeys = Array.isArray(downKeys) ? downKeys : [downKeys];
 		this.inputMap = {};
 		this.setupListeners();
   }
@@ -48,12 +48,12 @@ export class LocalInputController extends InputController
 	 */
 	getMovement()
 	{
-		const upPressed = this.inputMap[this.upKey] || 
-						(this.upKey === "w" && this.inputMap["W"]) ||
-						(this.upKey === "s" && this.inputMap["S"]);
-		const downPressed = this.inputMap[this.downKey] ||
-							(this.downKey === "w" && this.inputMap["W"]) ||
-							(this.downKey === "s" && this.inputMap["S"]);
+		const upPressed = this.upKeys.some(key => this.inputMap[key] || 
+						(key.toLowerCase() === "w" && this.inputMap["W"]) ||
+						(key.toLowerCase() === "s" && this.inputMap["S"]));
+		const downPressed = this.downKeys.some(key => this.inputMap[key] ||
+							(key.toLowerCase() === "w" && this.inputMap["W"]) ||
+							(key.toLowerCase() === "s" && this.inputMap["S"]));
 
 		if (upPressed)
 			return "up";
